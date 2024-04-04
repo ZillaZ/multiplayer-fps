@@ -147,6 +147,5 @@ pub fn create_player(
         cam_controller,
     );
     manager.players.insert(id, player.clone());
-    println!("INSERTED WITH ID {}", id);
     player
 }

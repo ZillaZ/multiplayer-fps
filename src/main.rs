@@ -96,7 +96,7 @@ async fn handle_connection(
     stream: &mut TcpStream,
     rec_clone: Receiver<GameManager>,
     channel: Sender<GameManager>,
-    count: &mut i32
+    count: &mut i32,
 ) {
     let mut control = false;
     let mut player: Option<Player> = None;
@@ -105,7 +105,6 @@ async fn handle_connection(
     while let Ok(data) = stream.read(&mut buf).await {
         manager = Some(rec_clone.recv().unwrap());
         if !control {
-            println!("PLAYER CREATED");
             player = Some(new_player(&mut manager.as_mut().unwrap()));
             control = true;
         }
@@ -123,9 +122,6 @@ async fn handle_connection(
         }
     }
     manager = Some(rec_clone.recv().unwrap());
-    println!("PLAYERS BEFORE REMOVAL: {:?}", manager.as_ref().unwrap().players.keys().collect::<Vec<&u64>>());
     manager.as_mut().unwrap().remove_player(&player.unwrap().id);
-    println!("PLAYERS AFTER REMOVAL: {:?}", manager.as_ref().unwrap().players.keys().collect::<Vec<&u64>>());
-    println!("CEASING COUNT {}", count);
     channel.send(manager.unwrap()).unwrap();
 }
