@@ -28,10 +28,8 @@ async fn main() {
     let (mut handle, _thread) = raylib::init().build();
     handle.set_target_fps(60);
     let (state_sender, state_receiver) = unbounded();
-    let (player_sender, player_receiver): (
-        Sender<(Mutex<Player>, GameManager)>,
-        Receiver<(Mutex<Player>, GameManager)>,
-    ) = unbounded();
+    let (player_sender, player_receiver): (Sender<GameManager>, Receiver<GameManager>) =
+        unbounded();
 
     let _ = tokio::spawn(async move {
         let mut manager = Mutex::new(GameManager::new());
@@ -59,25 +57,23 @@ async fn main() {
         loop {
             sender.send(manager.lock().await.clone()).unwrap();
             let player_state = player_receiver.recv();
-            if player_state.as_ref().is_ok() {
-                manager = Mutex::new(player_state.as_ref().unwrap().1.clone());
-                println!("PLAYERS :");
-                for player in manager.lock().await.players.values() {
-                    println!("{:?}", player);
-                }
-                println!("");
+            if let Ok(state) = player_state {
+                manager = Mutex::new(state);
             }
             manager.lock().await.update();
         }
     });
 
+    let mut count = 0;
     while let Ok((mut stream, _addr)) = listener.accept().await {
         let rec_clone = state_receiver.clone();
         let clone = player_sender.clone();
+        count += 1;
         let _ = tokio::spawn(async move {
-            handle_connection(&mut stream, rec_clone, clone).await;
-
+            handle_connection(&mut stream, rec_clone, clone, &mut count).await;
+            stream.shutdown().await.unwrap();
         });
+        count -= 1;
     }
 }
 
@@ -99,15 +95,17 @@ fn new_player(manager: &mut GameManager) -> Player {
 async fn handle_connection(
     stream: &mut TcpStream,
     rec_clone: Receiver<GameManager>,
-    channel: Sender<(Mutex<Player>, GameManager)>,
+    channel: Sender<GameManager>,
+    count: &mut i32
 ) {
     let mut control = false;
-    let mut player : Option<Player> = None;
+    let mut player: Option<Player> = None;
     let mut buf = [0; 1024];
     let mut manager = None;
     while let Ok(data) = stream.read(&mut buf).await {
         manager = Some(rec_clone.recv().unwrap());
         if !control {
+            println!("PLAYER CREATED");
             player = Some(new_player(&mut manager.as_mut().unwrap()));
             control = true;
         }
@@ -120,11 +118,14 @@ async fn handle_connection(
                 Vector3::new(0.0, -9.81, 0.0),
             );
             manager.as_mut().unwrap().dt = state.dt;
-            channel
-                .send((Mutex::new(player.clone().unwrap()), manager.as_ref().unwrap().clone()))
-                .unwrap();
-            let count = stream.write(&signal.to_bytes().unwrap()).await.unwrap();
-            println!("{:?}", count);
+            channel.send(manager.as_ref().unwrap().clone()).unwrap();
+            let _count = stream.write(&signal.to_bytes().unwrap()).await.unwrap();
         }
     }
+    manager = Some(rec_clone.recv().unwrap());
+    println!("PLAYERS BEFORE REMOVAL: {:?}", manager.as_ref().unwrap().players.keys().collect::<Vec<&u64>>());
+    manager.as_mut().unwrap().remove_player(&player.unwrap().id);
+    println!("PLAYERS AFTER REMOVAL: {:?}", manager.as_ref().unwrap().players.keys().collect::<Vec<&u64>>());
+    println!("CEASING COUNT {}", count);
+    channel.send(manager.unwrap()).unwrap();
 }

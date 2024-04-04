@@ -4,7 +4,7 @@ use rapier3d::control::KinematicCharacterController;
 use rapier3d::prelude::*;
 use raylib::prelude::*;
 
-use crate::player::Player;
+use crate::player::{self, Player};
 use crate::reader::get_vertices;
 use crate::{lights, objects::*, S};
 
@@ -91,7 +91,6 @@ impl GameManager {
         let object = Object::new(model_type, position, Vector4::identity());
         let collider = create_collider(&shape, restitution, Some(vertices));
         let body = create_body(body_type, position, linear_damping, additional_mass);
-        self.network_objects.push(object.clone());
         let body_handle = self.bodies.insert(body);
         let collider_handle =
             self.colliders
@@ -108,6 +107,17 @@ impl GameManager {
             Vector3::zero(),
             Color::RED,
             light_shader,
+        );
+    }
+
+    pub fn remove_player(&mut self, player_id: &u64) {
+        println!("REMOVING ID {}", player_id);
+        let player = self.players.remove(player_id).unwrap();
+        self.colliders.remove(
+            player.collider,
+            &mut self.island_manager,
+            &mut self.bodies,
+            false,
         );
     }
 }
@@ -137,5 +147,6 @@ pub fn create_player(
         cam_controller,
     );
     manager.players.insert(id, player.clone());
+    println!("INSERTED WITH ID {}", id);
     player
 }

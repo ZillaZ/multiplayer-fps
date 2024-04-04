@@ -28,7 +28,13 @@ pub struct ResponseSignal {
 }
 
 impl ResponseSignal {
-    pub fn new(translation: Vector3, camera_pos: Vector3, camera_target: Vector3, fwd: Vector3, right: Vector3) -> Self {
+    pub fn new(
+        translation: Vector3,
+        camera_pos: Vector3,
+        camera_target: Vector3,
+        fwd: Vector3,
+        right: Vector3,
+    ) -> Self {
         Self {
             player_count: 0,
             object_count: 0,
@@ -97,7 +103,8 @@ impl Player {
         gravity: Vector3,
     ) -> ResponseSignal {
         let mut collisions = vec![];
-        let camera_pos = Vector3::new(self.position.x, self.position.y, self.position.z) - self.fwd * 5.0;
+        let camera_pos =
+            Vector3::new(self.position.x, self.position.y, self.position.z) - self.fwd * 5.0;
         let cam_mov = self.camera_controller.move_shape(
             dt,
             &mut manager.bodies,
@@ -140,15 +147,20 @@ impl Player {
         self.solve_collisions(manager.clone(), collisions, dt);
         self.update_collider(manager);
 
-        let mut response =
-            ResponseSignal::new(self.position, self.camera_position, self.camera_target, self.fwd, self.right);
+        let mut response = ResponseSignal::new(
+            self.position,
+            self.camera_position,
+            self.camera_target,
+            self.fwd,
+            self.right,
+        );
         for player in manager.players.values() {
             response.players.push(ResponseSignal::new(
                 player.position,
                 player.camera_position,
                 player.camera_target,
                 player.fwd,
-                player.right
+                player.right,
             ));
         }
         for object in manager.network_objects.iter() {
@@ -180,9 +192,7 @@ impl Player {
     }
 
     fn update_collider(&mut self, manager: &mut GameManager) {
-        let access = manager
-            .colliders
-            .get_mut(self.collider);
+        let access = manager.colliders.get_mut(self.collider);
         if let Some(data) = access {
             data.set_translation(vector![self.position.x, self.position.y, self.position.z]);
         }
