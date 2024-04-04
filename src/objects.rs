@@ -64,9 +64,9 @@ pub enum ObjectType {
 #[derive(Debug, DekuRead, DekuWrite, Clone)]
 pub struct Object {
     pub model_type: ObjectType,
-    position: [f32; 3],
-    rotation: [f32; 4],
-    id: u64,
+    pub position: [f32; 3],
+    pub rotation: [f32; 4],
+    pub id: u64,
 }
 
 impl Object {

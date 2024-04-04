@@ -2,7 +2,7 @@ use crossbeam::channel::{unbounded, Receiver, Sender};
 use deku::prelude::*;
 use game::GameManager;
 use game::*;
-use objects::Shape as S;
+use objects::{Shape as S, Sphere};
 use player::*;
 use rand::prelude::*;
 use rapier3d::prelude::*;
@@ -33,6 +33,7 @@ async fn main() {
 
     let _ = tokio::spawn(async move {
         let mut manager = Mutex::new(GameManager::new());
+        let mut pipeline = PhysicsPipeline::new();
         manager.lock().await.add_object(
             Vector3::zero(),
             S::DYNAMIC,
@@ -40,15 +41,15 @@ async fn main() {
             1.0,
             "static/models/untitled.obj",
             objects::ObjectType::GROUND,
-            1.0,
+            0.0,
             0.0,
         );
         manager.lock().await.add_object(
-            Vector3::up() * 10000.0,
-            S::DYNAMIC,
+            Vector3::up() * 10.0,
+            S::SPHERE(Sphere::new(2.0)),
             RigidBodyType::Dynamic,
             1.0,
-            "static/models/untitled.obj",
+            "static/models/ball.obj",
             objects::ObjectType::BALL,
             0.0,
             10.0,
@@ -60,20 +61,17 @@ async fn main() {
             if let Ok(state) = player_state {
                 manager = Mutex::new(state);
             }
-            manager.lock().await.update();
+            manager.lock().await.update(&mut pipeline);
         }
     });
 
-    let mut count = 0;
     while let Ok((mut stream, _addr)) = listener.accept().await {
         let rec_clone = state_receiver.clone();
         let clone = player_sender.clone();
-        count += 1;
         let _ = tokio::spawn(async move {
-            handle_connection(&mut stream, rec_clone, clone, &mut count).await;
+            handle_connection(&mut stream, rec_clone, clone).await;
             stream.shutdown().await.unwrap();
         });
-        count -= 1;
     }
 }
 
@@ -84,7 +82,7 @@ fn new_player(manager: &mut GameManager) -> Player {
         manager,
         id,
         1.0,
-        Vector3::zero(),
+        Vector3::up() * 15.0,
         0.0,
         50.0,
         "static/models/ball.obj",
@@ -96,12 +94,12 @@ async fn handle_connection(
     stream: &mut TcpStream,
     rec_clone: Receiver<GameManager>,
     channel: Sender<GameManager>,
-    count: &mut i32,
 ) {
     let mut control = false;
     let mut player: Option<Player> = None;
     let mut buf = [0; 1024];
     let mut manager = None;
+    let _ = manager;
     while let Ok(data) = stream.read(&mut buf).await {
         manager = Some(rec_clone.recv().unwrap());
         if !control {

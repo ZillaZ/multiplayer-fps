@@ -144,7 +144,7 @@ impl Player {
         );
         self.position += Vector3::new(mov.translation.x, mov.translation.y, mov.translation.z);
 
-        self.solve_collisions(manager.clone(), collisions, dt);
+        self.solve_collisions(manager, collisions, dt);
         self.update_collider(manager);
 
         let mut response = ResponseSignal::new(
@@ -173,7 +173,7 @@ impl Player {
 
     fn solve_collisions(
         &mut self,
-        mut manager: GameManager,
+        manager: &mut GameManager,
         collisions: Vec<CharacterCollision>,
         dt: f32,
     ) {

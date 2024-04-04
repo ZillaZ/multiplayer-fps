@@ -4,7 +4,7 @@ use rapier3d::control::KinematicCharacterController;
 use rapier3d::prelude::*;
 use raylib::prelude::*;
 
-use crate::player::{self, Player};
+use crate::player::Player;
 use crate::reader::get_vertices;
 use crate::{lights, objects::*, S};
 
@@ -29,9 +29,9 @@ pub struct GameManager {
 }
 
 impl GameManager {
-    pub fn update(&mut self) {
+    pub fn update(&mut self, pipeline: &mut PhysicsPipeline) {
         let rapier_gravity = vector![0.0, -90.81, 0.0];
-        PhysicsPipeline::new().step(
+        pipeline.step(
             &rapier_gravity,
             &self.integration_parameters,
             &mut self.island_manager,
@@ -46,6 +46,17 @@ impl GameManager {
             &(),
             &(),
         );
+        for object in self.network_objects.iter_mut() {
+            for physics in self.objects.iter() {
+                if object.id == physics.0.id {
+                    let access = self.colliders.get(physics.1).unwrap();
+                    let position = access.translation();
+                    let rotation = access.rotation().as_vector();
+                    object.position = [position.x, position.y, position.z];
+                    object.rotation = [rotation.x, rotation.y, rotation.z, rotation.w];
+                }
+            }
+        }
     }
 
     pub fn update_player(&mut self, player: &mut Player) {
