@@ -1,0 +1,19 @@
+[package]
+name = "aimserver"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+crossbeam = "0.8.4"
+deku = "0.16.0"
+obj-rs = "0.7.1"
+rapier3d = { version = "*", features = [ "simd-stable" ]}
+rand = "0.8.5"
+tokio = { version = "1.37.0", features = ["full"] }
+
+[dependencies.raylib]
+version = "5.0.0"
+git = "https://github.com/bitten2up/raylib-rs"
+rev = "d790832cc22098b068350b523735e2e8451e9d1f"

@@ -1,0 +1,12 @@
+# Blender 4.0.2 MTL File: 'None'
+# www.blender.org
+
+newmtl Material
+Ns 793.718994
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 2.000000
+d 1.000000
+illum 3
+map_Kd C:/Users/lucas/Downloads/Compressed/used-stainless-steel2-bl/used-stainless-steel2-bl/used-stainless-steel2_albedo.png
