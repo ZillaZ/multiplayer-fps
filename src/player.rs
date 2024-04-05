@@ -209,3 +209,18 @@ impl Player {
         self.camera_target = self.camera_position + target * dt;
     }
 }
+
+pub fn new_player(manager: &mut GameManager) -> Player {
+    let mut rng = thread_rng();
+    let id = rng.gen_range(0..std::u64::MAX);
+    create_player(
+        manager,
+        id,
+        1.0,
+        Vector3::up() * 15.0,
+        0.0,
+        50.0,
+        "static/models/ball.obj",
+        S::CONVEX,
+    )
+}

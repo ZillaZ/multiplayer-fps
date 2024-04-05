@@ -2,6 +2,7 @@ use crossbeam::channel::{unbounded, Receiver, Sender};
 use deku::prelude::*;
 use game::GameManager;
 use game::*;
+use network::*;
 use objects::{Shape as S, Sphere};
 use player::*;
 use rand::prelude::*;
@@ -9,10 +10,10 @@ use rapier3d::prelude::*;
 use raylib::{math::Vector3, shaders::RaylibShader};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Mutex;
 
 pub mod game;
 pub mod lights;
+pub mod network;
 pub mod objects;
 pub mod player;
 pub mod reader;
@@ -32,36 +33,17 @@ async fn main() {
         unbounded();
 
     let _ = tokio::spawn(async move {
-        let mut manager = Mutex::new(GameManager::new());
+        let mut manager = GameManager::new();
         let mut pipeline = PhysicsPipeline::new();
-        manager.lock().await.add_object(
-            Vector3::zero(),
-            S::DYNAMIC,
-            RigidBodyType::Fixed,
-            1.0,
-            "static/models/untitled.obj",
-            objects::ObjectType::GROUND,
-            0.0,
-            0.0,
-        );
-        manager.lock().await.add_object(
-            Vector3::up() * 10.0,
-            S::SPHERE(Sphere::new(2.0)),
-            RigidBodyType::Dynamic,
-            1.0,
-            "static/models/ball.obj",
-            objects::ObjectType::BALL,
-            0.0,
-            10.0,
-        );
+        setup_scenario(&mut manager);
         let sender = state_sender.clone();
         loop {
-            sender.send(manager.lock().await.clone()).unwrap();
+            sender.send(manager.clone()).unwrap();
             let player_state = player_receiver.recv();
             if let Ok(state) = player_state {
-                manager = Mutex::new(state);
+                manager = state;
             }
-            manager.lock().await.update(&mut pipeline);
+            manager.update(&mut pipeline);
         }
     });
 
@@ -75,50 +57,36 @@ async fn main() {
     }
 }
 
-fn new_player(manager: &mut GameManager) -> Player {
-    let mut rng = thread_rng();
-    let id = rng.gen_range(0..std::u64::MAX);
-    create_player(
-        manager,
-        id,
+pub fn setup_scenario(manager: &mut GameManager) {
+    manager.add_object(
+        Vector3::zero(),
+        S::CONVEX,
+        RigidBodyType::Fixed,
         1.0,
-        Vector3::up() * 15.0,
+        "static/models/untitled.obj",
+        objects::ObjectType::GROUND,
         0.0,
-        50.0,
+        0.0,
+    );
+    manager.add_object(
+        Vector3::up() * 10.0,
+        S::SPHERE(Sphere::new(2.0)),
+        RigidBodyType::Dynamic,
+        1.0,
         "static/models/ball.obj",
-        S::DYNAMIC,
-    )
-}
-
-async fn handle_connection(
-    stream: &mut TcpStream,
-    rec_clone: Receiver<GameManager>,
-    channel: Sender<GameManager>,
-) {
-    let mut control = false;
-    let mut player: Option<Player> = None;
-    let mut buf = [0; 1024];
-    let mut manager = None;
-    let _ = manager;
-    while let Ok(_data) = stream.read(&mut buf).await {
-        manager = Some(rec_clone.recv().unwrap());
-        if !control {
-            player = Some(new_player(&mut manager.as_mut().unwrap()));
-            control = true;
-        }
-        let state = PlayerSignal::from_bytes((&buf, 0)).unwrap().1;
-        let signal = player.as_mut().unwrap().update(
-            &mut manager.as_mut().unwrap(),
-            state.clone(),
-            state.dt,
-            Vector3::new(0.0, -9.81, 0.0),
-        );
-        manager.as_mut().unwrap().dt = state.dt;
-        channel.send(manager.as_ref().unwrap().clone()).unwrap();
-        let _count = stream.write(&signal.to_bytes().unwrap()).await.unwrap();
-        stream.flush().await.unwrap();
-    }
-    manager = Some(rec_clone.recv().unwrap());
-    manager.as_mut().unwrap().remove_player(&player.unwrap().id);
-    channel.send(manager.unwrap()).unwrap();
+        objects::ObjectType::BALL,
+        0.0,
+        10.0,
+    );
+    manager.add_object(
+        Vector3::new(0.0, 10.0, 20.0),
+        S::MULTI,
+        RigidBodyType::Fixed,
+        0.0,
+        "static/models/roscakk.obj",
+        objects::ObjectType::RING,
+        0.0,
+        0.0,
+    );
+    println!("Scenario is ready to go!");
 }

@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 crossbeam = "0.8.4"
 deku = "0.16.0"
-obj-rs = "0.7.1"
 rapier3d = { version = "*", features = [ "simd-stable" ]}
 rand = "0.8.5"
 tokio = { version = "1.37.0", features = ["full"] }

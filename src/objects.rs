@@ -32,7 +32,8 @@ impl Sphere {
 pub enum Shape {
     CUBOID(Cuboid),
     SPHERE(Sphere),
-    DYNAMIC,
+    CONVEX,
+    MULTI
 }
 
 impl Shape {
@@ -59,6 +60,8 @@ pub enum ObjectType {
     PLAYER,
     #[deku(id = "0x3")]
     BALL,
+    #[deku(id = "0x4")]
+    RING,
 }
 
 #[derive(Debug, DekuRead, DekuWrite, Clone)]
@@ -85,7 +88,7 @@ impl Object {
 pub fn create_collider(
     shape: &Shape,
     restitution: f32,
-    vertices: Option<Vec<OPoint<f32, Const<3>>>>,
+    vertices: Option<(Vec<OPoint<f32, Const<3>>>, Vec<[u32; 3]>)>,
 ) -> Collider {
     match shape {
         Shape::CUBOID(val) => ColliderBuilder::cuboid(val.hx, val.hy, val.hz)
@@ -94,10 +97,13 @@ pub fn create_collider(
         Shape::SPHERE(val) => ColliderBuilder::ball(val.radius)
             .restitution(restitution)
             .build(),
-        Shape::DYNAMIC => ColliderBuilder::convex_hull(vertices.unwrap().as_slice())
+        Shape::CONVEX => ColliderBuilder::convex_hull(vertices.unwrap().0.as_slice())
             .unwrap()
             .restitution(restitution)
             .build(),
+        Shape::MULTI => ColliderBuilder::convex_decomposition(vertices.as_ref().unwrap().0.as_slice(), vertices.as_ref().unwrap().1.as_slice())
+            .restitution(restitution)
+            .build()            
     }
 }
 
