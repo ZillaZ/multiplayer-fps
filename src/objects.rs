@@ -1,7 +1,5 @@
-use deku::prelude::*;
-use rand::Rng;
+use crate::*;
 use rapier3d::na::{Const, OPoint};
-use rapier3d::prelude::*;
 use raylib::math::*;
 
 #[derive(Clone, Debug)]
@@ -33,7 +31,8 @@ pub enum Shape {
     CUBOID(Cuboid),
     SPHERE(Sphere),
     CONVEX,
-    MULTI
+    MULTI,
+    SensorMulti,
 }
 
 impl Shape {
@@ -52,35 +51,58 @@ impl Shape {
 }
 
 #[derive(Debug, DekuRead, DekuWrite, Clone)]
-#[deku(type = "u8")]
-pub enum ObjectType {
-    #[deku(id = "0x1")]
-    GROUND,
-    #[deku(id = "0x2")]
-    PLAYER,
-    #[deku(id = "0x3")]
-    BALL,
-    #[deku(id = "0x4")]
-    RING,
-}
-
-#[derive(Debug, DekuRead, DekuWrite, Clone)]
-pub struct Object {
-    pub model_type: ObjectType,
+pub struct NetworkObject {
     pub position: [f32; 3],
     pub rotation: [f32; 4],
-    pub id: u64,
+    #[deku(update = "self.id.len()")]
+    id_len: usize,
+    #[deku(count = "id_len")]
+    pub id: Vec<u8>,
+}
+
+impl NetworkObject {
+    pub fn new(id: String, position: Vector3, rotation: Vector4) -> Self {
+        Self {
+            id: id.as_bytes().to_vec(),
+            id_len: id.len(),
+            position: position.to_array(),
+            rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Object {
+    pub shape: S,
+    pub body_type: RigidBodyType,
+    pub vertices: Vec<OPoint<f32, Const<3>>>,
+    pub indices: Vec<[u32; 3]>,
+    pub rotation: Vector3,
+    pub position: Vector3,
+    pub radius: f32,
+    pub name: String,
 }
 
 impl Object {
-    pub fn new(model_type: ObjectType, position: Vector3, rotation: Vector4) -> Self {
-        let mut rng = rand::thread_rng();
-        let id = rng.gen_range(0..std::u64::MAX);
+    pub fn new(
+        shape: S,
+        body_type: RigidBodyType,
+        vertices: Vec<OPoint<f32, Const<3>>>,
+        indices: Vec<[u32; 3]>,
+        rotation: Vector3,
+        position: Vector3,
+        radius: f32,
+        name: String,
+    ) -> Self {
         Self {
-            id,
-            position: position.to_array(),
-            rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
-            model_type,
+            name,
+            shape,
+            body_type,
+            vertices,
+            indices,
+            rotation,
+            position,
+            radius,
         }
     }
 }
@@ -88,22 +110,37 @@ impl Object {
 pub fn create_collider(
     shape: &Shape,
     restitution: f32,
+    density: f32,
     vertices: Option<(Vec<OPoint<f32, Const<3>>>, Vec<[u32; 3]>)>,
 ) -> Collider {
     match shape {
         Shape::CUBOID(val) => ColliderBuilder::cuboid(val.hx, val.hy, val.hz)
             .restitution(restitution)
+            .density(density)
             .build(),
         Shape::SPHERE(val) => ColliderBuilder::ball(val.radius)
             .restitution(restitution)
+            .density(density)
             .build(),
         Shape::CONVEX => ColliderBuilder::convex_hull(vertices.unwrap().0.as_slice())
             .unwrap()
             .restitution(restitution)
+            .density(density)
             .build(),
-        Shape::MULTI => ColliderBuilder::convex_decomposition(vertices.as_ref().unwrap().0.as_slice(), vertices.as_ref().unwrap().1.as_slice())
-            .restitution(restitution)
-            .build()            
+        Shape::MULTI => ColliderBuilder::convex_decomposition(
+            vertices.as_ref().unwrap().0.as_slice(),
+            vertices.as_ref().unwrap().1.as_slice(),
+        )
+        .restitution(restitution)
+        .density(density)
+        .build(),
+        Shape::SensorMulti => ColliderBuilder::convex_decomposition(
+            vertices.as_ref().unwrap().0.as_slice(),
+            vertices.as_ref().unwrap().1.as_slice(),
+        )
+        .sensor(true)
+        .density(density)
+        .build(),
     }
 }
 

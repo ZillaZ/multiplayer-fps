@@ -1,6 +1,9 @@
 use crate::*;
 use objects::*;
 use rapier3d::control::{CharacterCollision, KinematicCharacterController};
+use rapier3d::{
+    na::{Const, OPoint},
+};
 use raylib::math::Vector2;
 
 #[derive(Clone, DekuRead, DekuWrite)]
@@ -24,7 +27,7 @@ pub struct ResponseSignal {
     #[deku(count = "player_count")]
     players: Vec<ResponseSignal>,
     #[deku(count = "object_count")]
-    objects: Vec<Object>,
+    objects: Vec<NetworkObject>,
 }
 
 impl ResponseSignal {
@@ -65,6 +68,7 @@ pub struct Player {
     right: Vector3,
     pub mass: f32,
     pub dt: f32,
+    pub vertices: Option<(Vec<OPoint<f32, Const<3>>>, Vec<[u32; 3]>)>,
 }
 
 impl Player {
@@ -92,6 +96,7 @@ impl Player {
             camera_position: Vector3::zero(),
             camera_target: Vector3::forward(),
             dt: 0.0,
+            vertices: None,
         }
     }
 
@@ -103,28 +108,9 @@ impl Player {
         gravity: Vector3,
     ) -> ResponseSignal {
         let mut collisions = vec![];
-        let camera_pos =
-            Vector3::new(self.position.x, self.position.y, self.position.z) - self.fwd * 5.0;
-        let cam_mov = self.camera_controller.move_shape(
-            dt,
-            &mut manager.bodies,
-            &mut manager.colliders,
-            &manager.query_pipeline,
-            &rapier3d::parry::shape::Ball::new(2.0),
-            &Isometry::translation(
-                self.camera_position.x,
-                self.camera_position.y,
-                self.camera_position.z,
-            ),
-            vector![camera_pos.x, camera_pos.y, camera_pos.z],
-            QueryFilter::default().exclude_collider(self.collider),
-            |_| {},
-        );
-        self.camera_position = Vector3::new(
-            cam_mov.translation.x,
-            cam_mov.translation.y,
-            cam_mov.translation.z,
-        );
+        self.camera_position =
+            Vector3::new(self.position.x, self.position.y, self.position.z) + Vector3::up();
+
         let player_mov = Vector3::new(
             state.desired_mov[0],
             state.desired_mov[1],
@@ -208,19 +194,4 @@ impl Player {
         self.right = Vector3::new(-target.z, 0.0, target.x);
         self.camera_target = self.camera_position + target * dt;
     }
-}
-
-pub fn new_player(manager: &mut GameManager) -> Player {
-    let mut rng = thread_rng();
-    let id = rng.gen_range(0..std::u64::MAX);
-    create_player(
-        manager,
-        id,
-        1.0,
-        Vector3::up() * 15.0,
-        0.0,
-        50.0,
-        "static/models/ball.obj",
-        S::CONVEX,
-    )
 }

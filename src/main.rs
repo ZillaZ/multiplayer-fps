@@ -11,6 +11,7 @@ use raylib::{math::Vector3, shaders::RaylibShader};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+pub mod custom_events;
 pub mod game;
 pub mod lights;
 pub mod network;
@@ -31,11 +32,14 @@ async fn main() {
     let (state_sender, state_receiver) = unbounded();
     let (player_sender, player_receiver): (Sender<GameManager>, Receiver<GameManager>) =
         unbounded();
+    let (collision_send, collision_recv) = crossbeam::channel::unbounded();
+    let (contact_force_send, contact_force_recv) = crossbeam::channel::unbounded();
+    let event_handler = ChannelEventCollector::new(collision_send, contact_force_send);
 
     let _ = tokio::spawn(async move {
         let mut manager = GameManager::new();
         let mut pipeline = PhysicsPipeline::new();
-        setup_scenario(&mut manager);
+        manager.init_scene("static/models/scene.obj");
         let sender = state_sender.clone();
         loop {
             sender.send(manager.clone()).unwrap();
@@ -43,7 +47,12 @@ async fn main() {
             if let Ok(state) = player_state {
                 manager = state;
             }
-            manager.update(&mut pipeline);
+            manager.update(
+                &mut pipeline,
+                &event_handler,
+                &collision_recv,
+                &contact_force_recv,
+            );
         }
     });
 
@@ -55,38 +64,4 @@ async fn main() {
             stream.shutdown().await.unwrap();
         });
     }
-}
-
-pub fn setup_scenario(manager: &mut GameManager) {
-    manager.add_object(
-        Vector3::zero(),
-        S::CONVEX,
-        RigidBodyType::Fixed,
-        1.0,
-        "static/models/untitled.obj",
-        objects::ObjectType::GROUND,
-        0.0,
-        0.0,
-    );
-    manager.add_object(
-        Vector3::up() * 10.0,
-        S::SPHERE(Sphere::new(2.0)),
-        RigidBodyType::Dynamic,
-        1.0,
-        "static/models/ball.obj",
-        objects::ObjectType::BALL,
-        0.0,
-        10.0,
-    );
-    manager.add_object(
-        Vector3::new(0.0, 10.0, 20.0),
-        S::MULTI,
-        RigidBodyType::Fixed,
-        0.0,
-        "static/models/roscakk.obj",
-        objects::ObjectType::RING,
-        0.0,
-        0.0,
-    );
-    println!("Scenario is ready to go!");
 }

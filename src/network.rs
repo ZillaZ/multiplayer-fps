@@ -13,7 +13,7 @@ pub async fn handle_connection(
     while let Ok(_data) = stream.read(&mut buf).await {
         manager = Some(rec_clone.recv().unwrap());
         if !control {
-            player = Some(new_player(&mut manager.as_mut().unwrap()));
+            player = Some(manager.as_mut().unwrap().new_player());
             control = true;
         }
         let state = PlayerSignal::from_bytes((&buf, 0)).unwrap().1;
@@ -29,6 +29,8 @@ pub async fn handle_connection(
         stream.flush().await.unwrap();
     }
     manager = Some(rec_clone.recv().unwrap());
-    manager.as_mut().unwrap().remove_player(&player.unwrap().id);
+    if let Some(player) = player {
+        manager.as_mut().unwrap().remove_player(&player.id);
+    }
     channel.send(manager.unwrap()).unwrap();
 }
