@@ -1,9 +1,9 @@
 use crate::*;
 use std::collections::HashMap;
 
+use rapier3d::control::CharacterCollision;
 use rapier3d::control::KinematicCharacterController;
 use rapier3d::na::{Matrix, Quaternion, Unit, UnitQuaternion};
-use rapier3d::parry::utils::IsometryOps;
 use rapier3d::{
     dynamics::RigidBodyType,
     na::{Const, OPoint},
@@ -13,8 +13,6 @@ use raylib::prelude::*;
 use crate::player::Player;
 use crate::reader::load_scene;
 use crate::{lights, objects::*, S};
-
-use self::custom_events::handle_collision;
 
 #[derive(Clone)]
 pub struct GameManager {
@@ -34,17 +32,70 @@ pub struct GameManager {
     pub objects: Vec<(NetworkObject, ColliderHandle, RigidBodyHandle)>,
     pub network_objects: Vec<NetworkObject>,
     pub players: HashMap<u64, Player>,
-    default_player: Option<Player>,
+    pub default_player: Option<Player>,
+    pub sender: Sender<Player>,
+    pub receiver: Receiver<Player>,
+    pub nsender: Sender<(Player, ResponseSignal)>,
+    pub nreceiver: Receiver<(Player, ResponseSignal)>,
 }
 
 impl GameManager {
-    pub fn update(
+    fn move_player(&mut self, player: &mut Player) {
+        let mut collisions = vec![];
+        if let Some(player_now) = self.players.get(&player.id) {
+            let player_mov = player.position - player_now.position;
+            let mov = player.obj.move_shape(
+                self.dt,
+                &mut self.bodies,
+                &mut self.colliders,
+                &self.query_pipeline,
+                &rapier3d::parry::shape::Ball::new(2.0),
+                &Isometry::translation(player.position.x, player.position.y, player.position.z),
+                vector![player_mov.x, player_mov.y, player_mov.z],
+                QueryFilter::default().exclude_collider(player.collider),
+                |collision| collisions.push(collision),
+            );
+            player.position += Vector3::new(mov.translation.x, mov.translation.y, mov.translation.z);
+
+            self.solve_collisions(player, collisions, self.dt);
+            self.update_collider(player);
+        }
+    }
+    fn solve_collisions(
         &mut self,
-        pipeline: &mut PhysicsPipeline,
-        event_handler: &ChannelEventCollector,
-        collision_recv: &Receiver<CollisionEvent>,
-        contact_recv: &Receiver<ContactForceEvent>,
+        player: &mut Player,
+        collisions: Vec<CharacterCollision>,
+        dt: f32,
     ) {
+        for collision in collisions {
+            player.obj.solve_character_collision_impulses(
+                dt,
+                &mut self.bodies,
+                &self.colliders,
+                &self.query_pipeline,
+                &rapier3d::parry::shape::Ball::new(2.0),
+                player.mass,
+                &collision,
+                QueryFilter::new(),
+            );
+        }
+    }
+
+    fn update_collider(&mut self, player: &mut Player) {
+        let access = self.colliders.get_mut(player.collider);
+        if let Some(data) = access {
+            data.set_translation(vector![
+                player.position.x,
+                player.position.y,
+                player.position.z
+            ]);
+        }
+    }
+    pub async fn update(&mut self, pipeline: &mut PhysicsPipeline) {
+        println!("prewait");
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs_f32(self.dt));
+        interval.tick().await;
+        println!("postwait");
         let rapier_gravity = vector![0.0, -90.81, 0.0];
         pipeline.step(
             &rapier_gravity,
@@ -61,7 +112,7 @@ impl GameManager {
             &(),
             &(),
         );
-        //handle_collision(self, collision_recv, contact_recv);
+
         for object in self.network_objects.iter_mut() {
             for physics in self.objects.iter() {
                 if object.id == physics.0.id {
@@ -73,16 +124,48 @@ impl GameManager {
                 }
             }
         }
-    }
-
-    pub fn update_player(&mut self, player: &mut Player) {
-        let this = self.players.get_mut(&player.id);
-        if let Some(data) = this {
-            *data = player.clone();
+        while !self.receiver.is_empty() {
+            let mut player = self.receiver.recv().unwrap();
+            self.update_player(&mut player);
         }
     }
 
+    pub fn update_player(&mut self, player: &mut Player) {
+        self.move_player(player);
+        self.players.insert(player.id, player.clone());
+        let signal = self.build_signal(player);
+        self.nsender.send((player.to_owned(), signal)).unwrap();
+    }
+
+    fn build_signal(&mut self, player: &mut Player) -> ResponseSignal {
+        let mut signal = ResponseSignal::new(
+            player.position,
+            player.camera_position,
+            player.camera_target,
+            player.fwd,
+            player.right,
+        );
+        signal.objects = self.network_objects.clone();
+        signal.players = self
+            .players
+            .values()
+            .map(|x| {
+                ResponseSignal::new(
+                    x.position,
+                    x.camera_position,
+                    x.camera_target,
+                    x.fwd,
+                    x.right,
+                )
+            })
+            .collect::<Vec<ResponseSignal>>();
+        signal.update().unwrap();
+        signal
+    }
+
     pub fn new() -> Self {
+        let (sender, receiver) = unbounded();
+        let (nsender, nreceiver) = unbounded();
         Self {
             colliders: ColliderSet::new(),
             bodies: RigidBodySet::new(),
@@ -98,9 +181,13 @@ impl GameManager {
             _event_handler: None,
             objects: Vec::new(),
             players: HashMap::new(),
-            dt: 0.0,
+            dt: 0.016,
             network_objects: Vec::new(),
             default_player: None,
+            sender,
+            receiver,
+            nsender,
+            nreceiver,
         }
     }
 

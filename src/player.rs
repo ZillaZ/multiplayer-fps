@@ -1,12 +1,10 @@
 use crate::*;
 use objects::*;
 use rapier3d::control::{CharacterCollision, KinematicCharacterController};
-use rapier3d::{
-    na::{Const, OPoint},
-};
+use rapier3d::na::{Const, OPoint};
 use raylib::math::Vector2;
 
-#[derive(Clone, DekuRead, DekuWrite)]
+#[derive(Clone, Debug, DekuRead, DekuWrite)]
 pub struct PlayerSignal {
     desired_mov: [f32; 3],
     desired_rot: [f32; 2],
@@ -16,18 +14,18 @@ pub struct PlayerSignal {
 #[derive(Clone, Debug, DekuRead, DekuWrite)]
 pub struct ResponseSignal {
     #[deku(update = "self.players.len()")]
-    player_count: u8,
+    pub player_count: usize,
     #[deku(update = "self.objects.len()")]
-    object_count: u8,
-    translation: [f32; 3],
-    camera_pos: [f32; 3],
-    camera_target: [f32; 3],
-    fwd: [f32; 3],
-    right: [f32; 3],
+    pub object_count: usize,
+    pub translation: [f32; 3],
+    pub camera_pos: [f32; 3],
+    pub camera_target: [f32; 3],
+    pub fwd: [f32; 3],
+    pub right: [f32; 3],
     #[deku(count = "player_count")]
-    players: Vec<ResponseSignal>,
+    pub players: Vec<ResponseSignal>,
     #[deku(count = "object_count")]
-    objects: Vec<NetworkObject>,
+    pub objects: Vec<NetworkObject>,
 }
 
 impl ResponseSignal {
@@ -52,6 +50,18 @@ impl ResponseSignal {
     }
 }
 
+impl Default for ResponseSignal {
+    fn default() -> Self {
+        Self::new(
+            Vector3::zero(),
+            Vector3::zero(),
+            Vector3::zero(),
+            Vector3::forward(),
+            Vector3::forward(),
+        )
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     pub id: u64,
@@ -60,12 +70,12 @@ pub struct Player {
     pub position: Vector3,
     pub fwd: Vector3,
     pub camera_controller: KinematicCharacterController,
-    camera_position: Vector3,
-    camera_target: Vector3,
+    pub camera_position: Vector3,
+    pub camera_target: Vector3,
     pub speed: f32,
+    pub right: Vector3,
     pitch: f32,
     yaw: f32,
-    right: Vector3,
     pub mass: f32,
     pub dt: f32,
     pub vertices: Option<(Vec<OPoint<f32, Const<3>>>, Vec<[u32; 3]>)>,
@@ -100,87 +110,31 @@ impl Player {
         }
     }
 
-    pub fn update(
+    pub async fn update(
         &mut self,
-        manager: &mut GameManager,
-        state: PlayerSignal,
+        sender: &mut Sender<Player>,
+        receiver: &mut Receiver<(Player, ResponseSignal)>,
         dt: f32,
         gravity: Vector3,
-    ) -> ResponseSignal {
-        let mut collisions = vec![];
-        self.camera_position =
-            Vector3::new(self.position.x, self.position.y, self.position.z) + Vector3::up();
-
-        let player_mov = Vector3::new(
-            state.desired_mov[0],
-            state.desired_mov[1],
-            state.desired_mov[2],
-        ) + gravity * dt;
-        self.update_camera(dt, Vector2::new(state.desired_rot[0], state.desired_rot[1]));
-        let mov = self.obj.move_shape(
-            dt,
-            &mut manager.bodies,
-            &mut manager.colliders,
-            &manager.query_pipeline,
-            &rapier3d::parry::shape::Ball::new(2.0),
-            &Isometry::translation(self.position.x, self.position.y, self.position.z),
-            vector![player_mov.x, player_mov.y, player_mov.z],
-            QueryFilter::default().exclude_collider(self.collider),
-            |collision| collisions.push(collision),
-        );
-        self.position += Vector3::new(mov.translation.x, mov.translation.y, mov.translation.z);
-
-        self.solve_collisions(manager, collisions, dt);
-        self.update_collider(manager);
-
-        let mut response = ResponseSignal::new(
-            self.position,
-            self.camera_position,
-            self.camera_target,
-            self.fwd,
-            self.right,
-        );
-        for player in manager.players.values() {
-            response.players.push(ResponseSignal::new(
-                player.position,
-                player.camera_position,
-                player.camera_target,
-                player.fwd,
-                player.right,
-            ));
-        }
-        for object in manager.network_objects.iter() {
-            response.objects.push(object.clone());
-        }
-        response.update().unwrap();
-        manager.update_player(self);
-        response
-    }
-
-    fn solve_collisions(
-        &mut self,
-        manager: &mut GameManager,
-        collisions: Vec<CharacterCollision>,
-        dt: f32,
+        stream: &mut TcpStream,
     ) {
-        for collision in collisions {
-            self.obj.solve_character_collision_impulses(
-                dt,
-                &mut manager.bodies,
-                &manager.colliders,
-                &manager.query_pipeline,
-                &rapier3d::parry::shape::Ball::new(2.0),
-                self.mass,
-                &collision,
-                QueryFilter::new(),
-            );
-        }
-    }
+        while let Some(state) = self.get_state(stream).await {
+            self.position += Vector3::new(
+                state.desired_mov[0],
+                state.desired_mov[1],
+                state.desired_mov[2],
+            ) + gravity * dt;
 
-    fn update_collider(&mut self, manager: &mut GameManager) {
-        let access = manager.colliders.get_mut(self.collider);
-        if let Some(data) = access {
-            data.set_translation(vector![self.position.x, self.position.y, self.position.z]);
+            self.camera_position = Vector3::new(self.position.x, self.position.y, self.position.z)
+                + Vector3::up() * 5.0
+                - self.fwd * 5.0;
+
+            self.update_camera(dt, Vector2::new(state.desired_rot[0], state.desired_rot[1]));
+            sender.send(self.clone()).unwrap();
+            let (player, signal) = receiver.recv().unwrap();
+            *self = player;
+            println!("{:?}", signal);
+            let _ = stream.write_all(&signal.to_bytes().unwrap()).await;
         }
     }
 
@@ -193,5 +147,15 @@ impl Player {
         self.fwd = target;
         self.right = Vector3::new(-target.z, 0.0, target.x);
         self.camera_target = self.camera_position + target * dt;
+    }
+
+    async fn get_state(&mut self, stream: &mut TcpStream) -> Option<PlayerSignal> {
+        let mut buffer = [0; 1024];
+        stream.read(&mut buffer).await.unwrap();
+        let result = PlayerSignal::from_bytes((&buffer, 0));
+        if let Ok(signal) = result {
+            return Some(signal.1);
+        }
+        None
     }
 }

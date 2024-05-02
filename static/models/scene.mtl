@@ -1,6 +1,28 @@
 # Blender 4.0.2 MTL File: 'untitled.blend'
 # www.blender.org
 
+newmtl Ch44_Body
+Ka 0.500000 0.500000 0.500000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd C:/Ch44_1002_Diffuse.png
+map_Ks C:/Ch44_1002_Specular.png
+map_Ns C:/Ch44_1002_Glossiness.png
+map_Ke C:/Ch44_1002_Emissive.png
+map_Bump -bm 1.000000 C:/Ch44_1002_Normal.png
+
+newmtl Ch44_body1
+Ka 0.500000 0.500000 0.500000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd C:/Ch44_1001_Diffuse.png
+map_Ks C:/Ch44_1001_Specular.png
+map_Ns C:/Ch44_1001_Glossiness.png
+map_Ke C:/Ch44_1001_Emissive.png
+map_Bump -bm 1.000000 C:/Ch44_1001_Normal.png
+
 newmtl Material.001
 Ns 250.000000
 Ka 1.000000 1.000000 1.000000
@@ -20,16 +42,6 @@ Ni 1.450000
 d 1.000000
 illum 2
 map_Kd C:/Users/lucas/Projects/aimlab/static/textures/texture.png
-
-newmtl Material.003
-Ns 250.000000
-Ka 1.000000 1.000000 1.000000
-Ks 0.500000 0.500000 0.500000
-Ke 0.000000 0.000000 0.000000
-Ni 1.450000
-d 1.000000
-illum 2
-map_Kd C:/Users/lucas/Projects/aimlab/static/textures/aim.png
 
 newmtl Material.004
 Ns 250.000000
