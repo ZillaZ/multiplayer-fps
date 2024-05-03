@@ -9,6 +9,7 @@ use rapier3d::{
     na::{Const, OPoint},
 };
 use raylib::prelude::*;
+use tokio::time::Instant;
 
 use crate::player::Player;
 use crate::reader::load_scene;
@@ -50,12 +51,17 @@ impl GameManager {
                 &mut self.colliders,
                 &self.query_pipeline,
                 &rapier3d::parry::shape::Ball::new(2.0),
-                &Isometry::translation(player.position.x, player.position.y, player.position.z),
+                &Isometry::translation(
+                    player_now.position.x,
+                    player_now.position.y,
+                    player_now.position.z,
+                ),
                 vector![player_mov.x, player_mov.y, player_mov.z],
                 QueryFilter::default().exclude_collider(player.collider),
                 |collision| collisions.push(collision),
             );
-            player.position += Vector3::new(mov.translation.x, mov.translation.y, mov.translation.z);
+            player.position = player_now.position
+                + Vector3::new(mov.translation.x, mov.translation.y, mov.translation.z);
 
             self.solve_collisions(player, collisions, self.dt);
             self.update_collider(player);
@@ -91,11 +97,10 @@ impl GameManager {
             ]);
         }
     }
-    pub async fn update(&mut self, pipeline: &mut PhysicsPipeline) {
-        println!("prewait");
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs_f32(self.dt));
-        interval.tick().await;
-        println!("postwait");
+    pub async fn update(&mut self, pipeline: &mut PhysicsPipeline, instant: &mut Instant) {
+        if instant.elapsed().as_secs_f32() < self.dt {
+            return;
+        }
         let rapier_gravity = vector![0.0, -90.81, 0.0];
         pipeline.step(
             &rapier_gravity,
@@ -128,6 +133,7 @@ impl GameManager {
             let mut player = self.receiver.recv().unwrap();
             self.update_player(&mut player);
         }
+        *instant = Instant::now();
     }
 
     pub fn update_player(&mut self, player: &mut Player) {

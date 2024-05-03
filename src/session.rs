@@ -1,5 +1,31 @@
 use crate::*;
 
+pub struct JoinPlayer {
+    pub player: Player,
+    pub sender: Sender<Player>,
+    pub receiver: Receiver<(Player, ResponseSignal)>,
+    pub dt: f32,
+    pub stream: TcpStream,
+}
+
+impl JoinPlayer {
+    pub fn new(
+        player: Player,
+        sender: Sender<Player>,
+        receiver: Receiver<(Player, ResponseSignal)>,
+        dt: f32,
+        stream: TcpStream,
+    ) -> Self {
+        Self {
+            player,
+            sender,
+            receiver,
+            dt,
+            stream,
+        }
+    }
+}
+
 #[derive(Clone, Debug, DekuRead, DekuWrite)]
 pub struct NewSessionRequest {
     #[deku(update = "self.id.len()")]
@@ -63,7 +89,7 @@ pub enum JoinResponse {
     #[deku(id = "0x1")]
     Ok,
     #[deku(id = "0x2")]
-    WrongPassword,
+    Err(Reason),
 }
 
 pub struct Session {
@@ -71,7 +97,7 @@ pub struct Session {
     pub game_manager: GameManager,
     password: String,
     player_limit: u8,
-    sender: Sender<(JoinResponse, Option<Player>)>,
+    sender: Sender<(JoinResponse, Option<JoinPlayer>)>,
     receiver: Receiver<(JoinSessionRequest, TcpStream)>,
     manager_receiver: Receiver<GameManager>,
     manager_sender: Sender<GameManager>,
@@ -81,10 +107,16 @@ impl Session {
     pub fn new(
         request: NewSessionRequest,
         receiver: Receiver<(JoinSessionRequest, TcpStream)>,
-        game_manager: GameManager
-    ) -> Result<(Self, Receiver<(JoinResponse, Option<Player>)>), Reason> {
+        mut game_manager: GameManager,
+    ) -> Result<(Self, Receiver<(JoinResponse, Option<JoinPlayer>)>), Reason> {
         let (sender, response_receiver) = unbounded();
         let (manager_sender, manager_receiver) = unbounded();
+        let (new_sender, new_receiver) = unbounded();
+        let (nsender, nreceiver) = unbounded();
+        game_manager.nsender = nsender;
+        game_manager.nreceiver = nreceiver;
+        game_manager.sender = new_sender;
+        game_manager.receiver = new_receiver;
         if let Ok(password) = String::from_utf8(request.password) {
             return Ok((
                 Self {
@@ -104,14 +136,18 @@ impl Session {
         }
     }
 
-    pub async fn update(&mut self, pipeline: &mut PhysicsPipeline) {
+    pub async fn update(
+        &mut self,
+        pipeline: &mut PhysicsPipeline,
+        instant: &mut tokio::time::Instant,
+    ) {
         if !self.manager_receiver.is_empty() {
             self.game_manager = self.manager_receiver.recv().unwrap();
         }
         while !self.receiver.is_empty() {
             self.join_player().await;
         }
-        self.game_manager.update(pipeline).await;
+        self.game_manager.update(pipeline, instant).await;
     }
 
     async fn join_player(&mut self) {
@@ -119,36 +155,31 @@ impl Session {
         let (request, mut stream) = self.receiver.recv().unwrap();
         if request.password != self.password.as_bytes() {
             stream
-                .write(&JoinResponse::WrongPassword.to_bytes().unwrap())
+                .write(&JoinResponse::Err(Reason::WrongPassword).to_bytes().unwrap())
                 .await
                 .unwrap();
             self.sender
-                .send((JoinResponse::WrongPassword, None))
+                .send((JoinResponse::Err(Reason::WrongPassword), None))
                 .unwrap();
             return;
         }
-        let mut player = self.game_manager.new_player();
+        let player = self.game_manager.new_player();
         stream
             .write(&JoinResponse::Ok.to_bytes().unwrap())
             .await
             .unwrap();
         stream.flush().await.unwrap();
-        let (mut sender, mut receiver) = (
+        let (sender, receiver) = (
             self.game_manager.sender.clone(),
             self.game_manager.nreceiver.clone(),
         );
         let dt = self.game_manager.dt;
-        tokio::spawn(async move {
-            println!("i'm inside the spawned thread!");
-            player
-                .update(
-                    &mut sender,
-                    &mut receiver,
-                    dt,
-                    Vector3::up() * -9.81,
-                    &mut stream,
-                ).await;
-        });
+        self.sender
+            .send((
+                JoinResponse::Ok,
+                Some(JoinPlayer::new(player, sender, receiver, dt, stream)),
+            ))
+            .unwrap();
         println!("player joined!");
     }
 }

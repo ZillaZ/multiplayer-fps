@@ -15,6 +15,8 @@ pub enum Reason {
     InvalidPassword,
     #[deku(id = "0x5")]
     IdDoesntExist,
+    #[deku(id = "0x6")]
+    WrongPassword
 }
 
 #[derive(DekuRead, DekuWrite)]
@@ -33,7 +35,7 @@ pub struct GameNetwork {
         String,
         (
             Sender<(JoinSessionRequest, TcpStream)>,
-            Receiver<(JoinResponse, Option<Player>)>,
+            Receiver<(JoinResponse, Option<JoinPlayer>)>,
         ),
     >,
     manager: GameManager,
@@ -47,7 +49,7 @@ impl GameNetwork {
             address,
             listener: None,
             active_sessions: HashMap::new(),
-            manager
+            manager,
         }
     }
     async fn open(&mut self) {
@@ -87,6 +89,20 @@ impl GameNetwork {
     }
     async fn create_session(&mut self, request: NewSessionRequest, mut stream: TcpStream) {
         let (sender, receiver) = unbounded();
+        if self
+            .active_sessions
+            .contains_key(&String::from_utf8(request.clone().id).unwrap())
+        {
+            stream
+                .write(
+                    &ServerResponse::InvalidRequest(Reason::IdInUse)
+                        .to_bytes()
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            return;
+        }
         let session = Session::new(request.clone(), receiver, self.manager.clone());
         if let Ok((mut session, receiver)) = session {
             println!("here!");
@@ -113,13 +129,22 @@ impl GameNetwork {
             );
             tokio::spawn(async move {
                 let mut pipeline = PhysicsPipeline::new();
+                let mut time = tokio::time::Instant::now();
                 loop {
-                    session.update(&mut pipeline).await;
+                    session.update(&mut pipeline, &mut time).await;
                 }
             });
 
             tokio::spawn(async move {
-                player.update(&mut sender, &mut receiver, dt, Vector3::up() * -9.81, &mut stream).await;
+                player
+                    .update(
+                        &mut sender,
+                        &mut receiver,
+                        dt,
+                        Vector3::up() * -9.81,
+                        &mut stream,
+                    )
+                    .await;
             });
         } else {
             println!("ta no else paekk");
@@ -134,11 +159,32 @@ impl GameNetwork {
         }
     }
     async fn join_session(&mut self, request: JoinSessionRequest, mut stream: TcpStream) {
+        use JoinResponse::*;
         if let Some((sender, receiver)) = self
             .active_sessions
             .get(&String::from_utf8(request.id.clone()).unwrap())
         {
             sender.send((request, stream)).unwrap();
+
+            let (response, join_info) = receiver.recv().unwrap();
+            match response {
+                Ok => {
+                    let mut join_info = join_info.unwrap();
+                    tokio::spawn(async move {
+                        join_info
+                            .player
+                            .update(
+                                &mut join_info.sender,
+                                &mut join_info.receiver,
+                                join_info.dt,
+                                Vector3::up() * -9.81,
+                                &mut join_info.stream,
+                            )
+                            .await;
+                    });
+                }
+                _ => {}
+            }
         } else {
             stream
                 .write(

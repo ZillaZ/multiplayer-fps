@@ -8,7 +8,7 @@ use raylib::math::Vector2;
 pub struct PlayerSignal {
     desired_mov: [f32; 3],
     desired_rot: [f32; 2],
-    pub dt: f32,
+    camera_radius: f32,
 }
 
 #[derive(Clone, Debug, DekuRead, DekuWrite)]
@@ -74,11 +74,12 @@ pub struct Player {
     pub camera_target: Vector3,
     pub speed: f32,
     pub right: Vector3,
-    pitch: f32,
-    yaw: f32,
     pub mass: f32,
     pub dt: f32,
     pub vertices: Option<(Vec<OPoint<f32, Const<3>>>, Vec<[u32; 3]>)>,
+    camera_radius: f32,
+    pitch: f32,
+    yaw: f32,
 }
 
 impl Player {
@@ -107,6 +108,7 @@ impl Player {
             camera_target: Vector3::forward(),
             dt: 0.0,
             vertices: None,
+            camera_radius: 5.0,
         }
     }
 
@@ -124,10 +126,11 @@ impl Player {
                 state.desired_mov[1],
                 state.desired_mov[2],
             ) + gravity * dt;
+            self.camera_radius = state.camera_radius.clamp(2.5, 20.0);
 
             self.camera_position = Vector3::new(self.position.x, self.position.y, self.position.z)
                 + Vector3::up() * 5.0
-                - self.fwd * 5.0;
+                - self.fwd * self.camera_radius;
 
             self.update_camera(dt, Vector2::new(state.desired_rot[0], state.desired_rot[1]));
             sender.send(self.clone()).unwrap();
